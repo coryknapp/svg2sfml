@@ -16,6 +16,7 @@
 #include <SFML/Graphics.hpp>
 
 #include "color_table.hpp"
+#include "shapes.hpp"
 #include <sfml-utilities/sfml-utilities.hpp>
 namespace svg2sfml{
 
@@ -76,6 +77,39 @@ void Loader::applyColorAsLine( sf::Shape * shape ){
 			m_tagStack.back()->second.get<std::string>("<xmlattr>.stroke" , default_fill_color) ) );
 	shape->setOutlineThickness( 0.0f );
 }
+    
+
+void Loader::applyTransformable( sf::Shape * shape ){
+    for( auto &e : m_tagStack ){
+        auto transString = e->second.get_optional<std::string>( "<xmlattr>.transform" );
+        if( transString ){
+            std::stringstream tStream( transString.value() );
+            std::string command;
+            while( !tStream.eof() ){
+                tStream >> command;
+                //find what comes before the (, that's the command
+                size_t openParan = command.find( "(" );
+                std::string functionName = command.substr( 0, openParan );
+                std::string argument = command.substr( openParan+1, command.find( ")" ) );
+                if( functionName == "translate" ){
+                    //this one has two coords
+                    size_t commaPos = argument.find( "," );
+                    float x = boost::lexical_cast<float>( argument.substr(0, commaPos) );
+                    float y = boost::lexical_cast<float>( argument.substr(commaPos+1) );
+                    shape->move( x, y );
+                } else if( functionName == "scale"){
+                    float s = boost::lexical_cast<float>( argument );
+                    shape->scale( s, s );
+                } else if( functionName == "rotate"){
+                    float r = boost::lexical_cast<float>( argument );
+                    shape->rotate( r );
+                } else {
+                    std::cout << "Don't know what to do with \"" << functionName << "\"\n";
+                }
+            }
+        }
+    }
+}
 
 std::unique_ptr< sf::Drawable >
 	Loader::readAsRect(){
@@ -96,18 +130,33 @@ std::unique_ptr< sf::Drawable >
 
 std::unique_ptr< sf::Drawable >
 	Loader::readAsCircle(){
-	sf::CircleShape * newCirc = new sf::CircleShape;
-	newCirc->setPosition(
-		m_tagStack.back()->second.get<float>("<xmlattr>.cx"),
-		m_tagStack.back()->second.get<float>("<xmlattr>.cy") );
-	newCirc->setOrigin(
-		m_tagStack.back()->second.get<float>("<xmlattr>.r"),
-		m_tagStack.back()->second.get<float>("<xmlattr>.r"));
-
-	newCirc->setRadius(
-		m_tagStack.back()->second.get<float>("<xmlattr>.r") );
-	applyColorAsShape( newCirc );
-	return std::unique_ptr< sf::Drawable >( newCirc );
+        sf::CircleShape * newCirc = new sf::CircleShape;
+        newCirc->setPosition(
+                             m_tagStack.back()->second.get<float>("<xmlattr>.cx"),
+                             m_tagStack.back()->second.get<float>("<xmlattr>.cy") );
+        newCirc->setOrigin(
+                           m_tagStack.back()->second.get<float>("<xmlattr>.r"),
+                           m_tagStack.back()->second.get<float>("<xmlattr>.r"));
+        
+        newCirc->setRadius(
+                           m_tagStack.back()->second.get<float>("<xmlattr>.r") );
+        applyColorAsShape( newCirc );
+        return std::unique_ptr< sf::Drawable >( newCirc );
+}
+    
+std::unique_ptr< sf::Drawable >
+    Loader::readAsEllipse(){
+    EllipseShape * newEllipse = new EllipseShape;
+    newEllipse->setPosition(
+                         m_tagStack.back()->second.get<float>("<xmlattr>.cx"),
+                         m_tagStack.back()->second.get<float>("<xmlattr>.cy") );
+    newEllipse->setPosition(
+                       m_tagStack.back()->second.get<float>("<xmlattr>.cx"),
+                       m_tagStack.back()->second.get<float>("<xmlattr>.cy"));
+    
+    applyColorAsShape( newEllipse );
+    return std::unique_ptr< sf::Drawable >( newEllipse );
+    
 }
 
 
@@ -209,7 +258,7 @@ return_t Loader::shapesFromSVGTag(){
 	} else if( m_tagStack.back()->first == "circle" ) {
 		shapes.push_back( readAsCircle() );
 	} else if( m_tagStack.back()->first == "ellipse" ) {
-		//shapes.push_back( readAsEllipse() );
+		shapes.push_back( readAsEllipse() );
 	} else if( m_tagStack.back()->first == "line" ) {
 		shapes.push_back( readAsLine() );
 	} else if( m_tagStack.back()->first == "polyline" ) {
