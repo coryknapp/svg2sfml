@@ -10,24 +10,30 @@
 
 #include <math.h>
 
+#include <boost/cast.hpp>
+#include <boost/lexical_cast.hpp>
+
 #include <SFML/Graphics.hpp>
 
 #include "color_table.hpp"
 #include <sfml-utilities/sfml-utilities.hpp>
-namespace pt = boost::property_tree;
 namespace svg2sfml{
 
 static const std::string default_fill_color = "#FFFFFF";
 static const std::string default_stroke_color = "#0000FF";
 
+return_t readSVG( const std::string &path ){
+    Loader l;
+    return l.read( path );
+}
+    
 sf::Color colorFromSVGColor( const std::string &name ){
 
+
 	if( name[0] == '#' ){
-		std::cout << "color " << name << std::endl;
 		int r = stoi( name.substr(1,2), nullptr, 16 );
 		int g = stoi( name.substr(3,2), nullptr, 16 );
 		int b = stoi( name.substr(5,2), nullptr, 16 );
-		std::cout << r << ',' <<g<<','<<b << std::endl;
 		return sf::Color( r, g, b, 255 );
 	}
 	auto iter = color_names.find( name );
@@ -39,65 +45,63 @@ sf::Color colorFromSVGColor( const std::string &name ){
 	return sf::Color(255,255,255,255);//TODO throw something
 }
 
-namespace make
-{
 
-void colorShape( sf::Shape * shape, pt::ptree::value_type &tag ){
+void Loader::applyColorAsShape( sf::Shape * shape ){
 //color/stroke attributes shared by all shapes
 	shape->setFillColor( colorFromSVGColor(
-			tag.second.get<std::string>("<xmlattr>.fill" , default_fill_color) ) );
+			m_tagStack.back()->second.get<std::string>(
+				"<xmlattr>.fill" , default_fill_color) ) );
 	shape->setOutlineColor(
 		colorFromSVGColor(
-			tag.second.get<std::string>("<xmlattr>.stroke", default_stroke_color) ) );
+			m_tagStack.back()->second.get<std::string>(
+				"<xmlattr>.stroke", default_stroke_color) ) );
 	shape->setOutlineThickness(
-		tag.second.get<float>("<xmlattr>.stroke-width", 0.0f) );
+		m_tagStack.back()->second.get<float>("<xmlattr>.stroke-width", 0.0f) );
 }
 
-void colorLine( sf::Shape * shape, pt::ptree::value_type &tag ){
+void Loader::applyColorAsLine( sf::Shape * shape ){
 //color/stroke attributes shared by all shapes
 	shape->setFillColor( colorFromSVGColor(
-			tag.second.get<std::string>("<xmlattr>.stroke" , default_fill_color) ) );
+			m_tagStack.back()->second.get<std::string>("<xmlattr>.stroke" , default_fill_color) ) );
 	shape->setOutlineThickness( 0.0f );
 }
 
 
-std::unique_ptr< sf::Shape > rect( pt::ptree::value_type &tag ){
+std::unique_ptr< sf::Drawable >
+	Loader::readAsRect(){
 	sf::RectangleShape *newRect = new sf::RectangleShape;
 		newRect->setPosition(
-			tag.second.get<float>("<xmlattr>.x"),
-			tag.second.get<float>("<xmlattr>.y") );
-			std::cout << tag.second.get<float>("<xmlattr>.x") << std::endl;
+			m_tagStack.back()->second.get<float>("<xmlattr>.x"),
+			m_tagStack.back()->second.get<float>("<xmlattr>.y") );
 		newRect->setSize( sf::Vector2f(
-			tag.second.get<float>("<xmlattr>.width"),
-			tag.second.get<float>("<xmlattr>.height") ) );
+			m_tagStack.back()->second.get<float>("<xmlattr>.width"),
+			m_tagStack.back()->second.get<float>("<xmlattr>.height") ) );
 		//TODO support rounded rectangles
 		//returnShape->setRoundedRectangles(
-		//	tag.second.get<float>("rx"),
-		//	tag.second.get<float>("ry") );
-	colorShape( newRect, tag );
-	return std::unique_ptr< sf::Shape >( newRect );
+		//	m_tagStack.back()->second.get<float>("rx"),
+		//	m_tagStack.back()->second.get<float>("ry") );
+	applyColorAsShape( newRect );
+	return std::unique_ptr< sf::Drawable >( newRect );
 }
 
-std::unique_ptr< sf::Shape > circle( pt::ptree::value_type &tag ){
+std::unique_ptr< sf::Drawable >
+	Loader::readAsCircle(){
 	sf::CircleShape * newCirc = new sf::CircleShape;
 	newCirc->setPosition(
-		tag.second.get<float>("<xmlattr>.cx"),
-		tag.second.get<float>("<xmlattr>.cy") );
+		m_tagStack.back()->second.get<float>("<xmlattr>.cx"),
+		m_tagStack.back()->second.get<float>("<xmlattr>.cy") );
 	newCirc->setOrigin(
-		tag.second.get<float>("<xmlattr>.r"),
-		tag.second.get<float>("<xmlattr>.r"));
+		m_tagStack.back()->second.get<float>("<xmlattr>.r"),
+		m_tagStack.back()->second.get<float>("<xmlattr>.r"));
 
 	newCirc->setRadius(
-		tag.second.get<float>("<xmlattr>.r") );
-	colorShape( newCirc, tag );
-	return std::unique_ptr< sf::Shape >( newCirc );
+		m_tagStack.back()->second.get<float>("<xmlattr>.r") );
+	applyColorAsShape( newCirc );
+	return std::unique_ptr< sf::Drawable >( newCirc );
 }
 
-std::unique_ptr< sf::Shape > ellipse( pt::ptree::value_type &tag ){
 
-}
-
-std::unique_ptr< sf::Shape >rectForLine(
+std::unique_ptr< sf::Drawable >rectForLine(
 		float x1,
 		float y1,
 		float x2,
@@ -110,76 +114,72 @@ std::unique_ptr< sf::Shape >rectForLine(
 	newRect->setOrigin( width/2.0f, width/2.0f );
 	newRect->setRotation(
 		180.0f/M_PI * sfu::angleOff0( sf::Vector2f( x2-x1, y2-y1 ) ) );
-	return std::unique_ptr< sf::Shape >( newRect );
+	return std::unique_ptr< sf::Drawable >( newRect );
 }
 
-std::unique_ptr< sf::Shape > line( pt::ptree::value_type &tag ){
-	float x1 = tag.second.get<float>("<xmlattr>.x1");
-	float y1 = tag.second.get<float>("<xmlattr>.y1");
-	float x2 = tag.second.get<float>("<xmlattr>.x2");
-	float y2 = tag.second.get<float>("<xmlattr>.y2");
-	float width = tag.second.get<float>("<xmlattr>.stroke-width");
-	auto rect = rectForLine( x1, y1, x2, y2, width );
-	colorLine( rect.get(), tag );
-	return rect;
+std::unique_ptr< sf::Drawable > Loader::readAsLine(){
+	float x1 = m_tagStack.back()->second.get<float>("<xmlattr>.x1");
+	float y1 = m_tagStack.back()->second.get<float>("<xmlattr>.y1");
+	float x2 = m_tagStack.back()->second.get<float>("<xmlattr>.x2");
+	float y2 = m_tagStack.back()->second.get<float>("<xmlattr>.y2");
+	float width = m_tagStack.back()->second.get<float>("<xmlattr>.stroke-width");
+	auto retRect = rectForLine( x1, y1, x2, y2, width );
+    applyColorAsLine( boost::polymorphic_downcast<sf::Shape*>(retRect.get()) );
+	return retRect;
 }
 
+return_t Loader::readAsPolyline(){
+    return_t returnPool;
+    std::string points = m_tagStack.back()->second.get<std::string>("<xmlattr>.points");
+    float width = m_tagStack.back()->second.get<float>("<xmlattr>.stroke-width");
+    std::stringstream dStream( std::move(points) );
+	float nX, nY, oX, oY;
+    std::string pairString;
+    
+    //read first pair
+    dStream >> pairString;
+    size_t commaPos = pairString.find( "," );
+    oX = boost::lexical_cast<float>( pairString.substr(0, commaPos) );
+    oY = boost::lexical_cast<float>( pairString.substr(commaPos+1) );
+    
+    while( !dStream.eof() ){
+        //the polyline path element is formed by pairs of numbers,
+        //where each coordinate is separated by a comma, and each
+        //pair is separated by a whitespace
+		dStream >> pairString;
+		size_t commaPos = pairString.find( "," );
+        nX = boost::lexical_cast<float>( pairString.substr(0, commaPos) );
+        nY = boost::lexical_cast<float>( pairString.substr(commaPos+1) );
 
-
-std::vector<std::string> &split(const std::string &s, char delim, std::vector<std::string> &elems) {
-    std::stringstream ss(s);
-    std::string item;
-    while (std::getline(ss, item, delim)) {
-        elems.push_back(item);
+        auto lineSegRect = rectForLine( oX, oY, nX, nY, width );
+        applyColorAsLine( boost::polymorphic_downcast<sf::Shape*>(lineSegRect.get()) );
+        returnPool.push_back( std::move( lineSegRect ) );
+        
+        oX = nX;
+        oY = nY;
     }
-    return elems;
+    return returnPool;
 }
-
-
-std::vector<std::string> split(const std::string &s, char delim) {
-    std::vector<std::string> elems;
-    split(s, delim, elems);
-    return elems;
-}
-
-return_t polyline( pt::ptree::value_type &tag ){
-	return_t returnList;
-	std::string pointString = tag.second.get<std::string>("<xmlattr>.points");
-	float width = tag.second.get<float>("<xmlattr>.stroke-width");
-	std::vector<std::string> sets = split(pointString,' ');
-	for(int n=0; n<sets.size()-1; n++ ){
-		std::vector<std::string>set1 = split( sets[n], ',' );
-		std::vector<std::string>set2 = split( sets[n+1], ',' );
-		auto segment = rectForLine( stoi(set1[0]), stoi(set1[1]),
-			stoi(set2[0]), stoi(set2[1]), width);
-		colorLine( segment.get(), tag );
-		returnList.push_back(std::move( segment ));
-	}
-	return returnList;
-}
-} /* make */ 
-
-
-
-return_t shapesFromSVGTag( pt::ptree::value_type &tag ){
-	std::cout << "tag = "<< tag.first << std::endl;
+    
+return_t Loader::shapesFromSVGTag(){
+    assert( !m_tagStack.empty() );
 	return_t shapes;
-	if( tag.first == "rect" ){
-		shapes.push_back( make::rect( tag ) );
-	} else if( tag.first == "circle" ) {
-		shapes.push_back( make::circle( tag ) );
-	} else if( tag.first == "ellipse" ) {
-		shapes.push_back( make::ellipse( tag ) );
-	} else if( tag.first == "line" ) {
-		shapes.push_back( make::line( tag ) );
-	} else if( tag.first == "polyline" ) {
-		shapes = make::polyline( tag );
+	if( m_tagStack.back()->first == "rect" ){
+		shapes.push_back( readAsRect() );
+	} else if( m_tagStack.back()->first == "circle" ) {
+		shapes.push_back( readAsCircle() );
+	} else if( m_tagStack.back()->first == "ellipse" ) {
+		//shapes.push_back( readAsEllipse() );
+	} else if( m_tagStack.back()->first == "line" ) {
+		shapes.push_back( readAsLine() );
+	} else if( m_tagStack.back()->first == "polyline" ) {
+		shapes = readAsPolyline();
 	}
 
 	return std::move( shapes );
 }
 
-return_t readSVG( const std::string &path ){
+return_t Loader::read( const std::string &path ){
 	
 	return_t returnVector;
 
@@ -190,20 +190,22 @@ return_t readSVG( const std::string &path ){
         // The data function is used to access the data stored in a node.
 		try{
 			//only needed to trigger the catch.  must be a better way
-			auto &attributes =  shapeNode.second.get_child("<xmlattr>");
-			auto shapes = shapesFromSVGTag( shapeNode );
+			//auto &attributes =  shapeNode.second.get_child("<xmlattr>");
+            //TODO implement searching the stack to get all properties
+            m_tagStack.push_back( &shapeNode );
+			auto shapes = shapesFromSVGTag();
 			for (auto &shape : shapes) {
 				if( shape.get() != nullptr )
 					returnVector.push_back( std::move( shape ) );
 			}
+            m_tagStack.pop_back();
 		} catch( pt::ptree_bad_path e ){
 			std::cout << "bad path = " << e.what()<< std::endl;
 		}
 	}
 
-	std::cout << "kkkk="<<returnVector.size() << std::endl;
 
 	return returnVector;
 }
 
-}
+}//end of svg2sfml namespace

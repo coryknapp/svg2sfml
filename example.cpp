@@ -1,3 +1,4 @@
+//clang++ -std=c++11 -lsfml-graphics -lsfml-system -lsfml-window svg2sfml.cpp example.cpp
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
 #include <iostream>
@@ -9,7 +10,8 @@ int main(int argc, char *argv[])
     // create the window
     sf::RenderWindow window(sf::VideoMode(800, 600), "svg2sfml test");
 
-	auto svgs = svg2sfml::readSVG( "test.svg" );
+	//auto svgs = svg2sfml::readSVG( "test.svg" );
+	auto svgs = svg2sfml::readSVG( "/Users/cknapp/Code/svg2sfml/test.svg" );
 
     // run the program as long as the window is open
     while (window.isOpen())
@@ -34,6 +36,5 @@ int main(int argc, char *argv[])
         // end the current frame
         window.display();
     }
-
     return 0;
 }
