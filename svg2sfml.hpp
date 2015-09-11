@@ -40,6 +40,8 @@ private:
 		readAsLine();
 	return_t
 		readAsPolyline();
+    return_t
+        readAsPolygon();
 	
 	return_t shapesFromSVGTag();
 };
@@ -52,7 +54,7 @@ std::unique_ptr< sf::Drawable >rectForLineSegment(
 	const float &x2,
 	const float &y2,
 	const float &width );
-
+std::vector< std::pair< float, float > > parsePointsAttribute();
 }; /* svg2sfml */
 
 #endif /* end of include guard: SVG2SFML_HPP_UGNRL9RY */

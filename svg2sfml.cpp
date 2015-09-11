@@ -66,7 +66,6 @@ void Loader::applyColorAsLine( sf::Shape * shape ){
 	shape->setOutlineThickness( 0.0f );
 }
 
-
 std::unique_ptr< sf::Drawable >
 	Loader::readAsRect(){
 	sf::RectangleShape *newRect = new sf::RectangleShape;
@@ -158,6 +157,34 @@ return_t Loader::readAsPolyline(){
         oX = nX;
         oY = nY;
     }
+    return returnPool;
+}
+    
+return_t Loader::readAsPolygon(){
+    return_t returnPool;
+    std::string points = m_tagStack.back()->second.get<std::string>("<xmlattr>.points");
+    std::stringstream dStream( std::move(points) );
+    
+    sf::ConvexShape * shape = new sf::ConvexShape;
+    
+    std::string pairString;
+    float x, y;
+    int pCount = 0;
+    while( !dStream.eof() ){
+        //the polyline path element is formed by pairs of numbers,
+        //where each coordinate is separated by a comma, and each
+        //pair is separated by a whitespace
+        dStream >> pairString;
+        size_t commaPos = pairString.find( "," );
+        x = boost::lexical_cast<float>( pairString.substr(0, commaPos) );
+        y = boost::lexical_cast<float>( pairString.substr(commaPos+1) );
+        
+        pCount++;
+        shape->setPointCount( pCount );
+        shape->setPoint( pCount, sf::Vector2f( x, y) );
+    }
+    applyColorAsShape( shape );
+    returnPool.push_back(std::unique_ptr<sf::Drawable>( shape ));
     return returnPool;
 }
     
