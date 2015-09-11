@@ -48,15 +48,26 @@ sf::Color colorFromSVGColor( const std::string &name ){
 
 void Loader::applyColorAsShape( sf::Shape * shape ){
 //color/stroke attributes shared by all shapes
-	shape->setFillColor( colorFromSVGColor(
-			m_tagStack.back()->second.get<std::string>(
-				"<xmlattr>.fill" , default_fill_color) ) );
-	shape->setOutlineColor(
-		colorFromSVGColor(
-			m_tagStack.back()->second.get<std::string>(
-				"<xmlattr>.stroke", default_stroke_color) ) );
-	shape->setOutlineThickness(
-		m_tagStack.back()->second.get<float>("<xmlattr>.stroke-width", 0.0f) );
+    boost::optional<std::string> fillColorStr;
+    boost::optional<std::string> strokeColorStr;
+    boost::optional<std::string> thicknessStr;
+    for( auto &e : m_tagStack ){
+        auto tempFill = e->second.get_optional<std::string>( "<xmlattr>.fill" );
+        if( tempFill )
+            fillColorStr = std::move( tempFill );
+        auto tempStroke = e->second.get_optional<std::string>( "<xmlattr>.stroke" );
+        if( tempStroke )
+            strokeColorStr = std::move( tempStroke );
+        auto tempWidth = e->second.get_optional<std::string>( "<xmlattr>.stroke-width" );
+        if( tempWidth )
+            thicknessStr = std::move( tempWidth );
+    }
+    
+    std::cout << "DICK " << fillColorStr.value_or( "SHIT FUCKER" ) << "\n";
+    
+    shape->setFillColor( colorFromSVGColor( fillColorStr.value_or( default_fill_color) ) );
+    shape->setOutlineColor( colorFromSVGColor( strokeColorStr.value_or( default_stroke_color ) ) );
+    shape->setOutlineThickness( boost::lexical_cast<float>( thicknessStr.value_or( "0" ) ) );
 }
 
 void Loader::applyColorAsLine( sf::Shape * shape ){
@@ -181,11 +192,13 @@ return_t Loader::readAsPolygon(){
         
         pCount++;
         shape->setPointCount( pCount );
-        shape->setPoint( pCount, sf::Vector2f( x, y) );
+        shape->setPoint( pCount-1, sf::Vector2f( x, y) );
     }
     applyColorAsShape( shape );
+    
     returnPool.push_back(std::unique_ptr<sf::Drawable>( shape ));
-    return returnPool;
+    
+    return std::move( returnPool );
 }
     
 return_t Loader::shapesFromSVGTag(){
@@ -201,7 +214,9 @@ return_t Loader::shapesFromSVGTag(){
 		shapes.push_back( readAsLine() );
 	} else if( m_tagStack.back()->first == "polyline" ) {
 		shapes = readAsPolyline();
-	}
+    } else if( m_tagStack.back()->first == "polygon" ) {
+        shapes = readAsPolygon();
+    }
 
 	return std::move( shapes );
 }
@@ -213,26 +228,43 @@ return_t Loader::read( const std::string &path ){
     pt::ptree tree;
     pt::read_xml(path, tree);
 
-    for(pt::ptree::value_type &shapeNode : tree.get_child("svg")) {
-        // The data function is used to access the data stored in a node.
-		try{
-			//only needed to trigger the catch.  must be a better way
-			//auto &attributes =  shapeNode.second.get_child("<xmlattr>");
-            //TODO implement searching the stack to get all properties
-            m_tagStack.push_back( &shapeNode );
-			auto shapes = shapesFromSVGTag();
-			for (auto &shape : shapes) {
-				if( shape.get() != nullptr )
-					returnVector.push_back( std::move( shape ) );
-			}
-            m_tagStack.pop_back();
-		} catch( pt::ptree_bad_path e ){
-			std::cout << "bad path = " << e.what()<< std::endl;
-		}
-	}
+    for( auto &e : tree.get_child( "svg" ) )
+        recursiveParse( e );
 
-
-	return returnVector;
+    return std::move( m_drawablePool );
 }
 
+void Loader::recursiveParse( pt::ptree::value_type &shapeNode ){
+    std::cout << "parsing " << shapeNode.first << "\n";
+    if( shapeNode.first == "<xmlattr>" ) //no need to worry about these
+        return;
+    if( shapeNode.first == "g" ){
+        //group node
+        //push it onto the stack so it's children can access it
+        m_tagStack.push_back( &shapeNode );
+        //send it's children through the parser
+        for(pt::ptree::value_type &child : shapeNode.second ) {
+            recursiveParse( child );
+        }
+        m_tagStack.pop_back(); // we're done with this group
+        
+    } else {
+        //maybe some kind of shape node?
+        try{
+            
+            m_tagStack.push_back( &shapeNode );
+            auto shapes = shapesFromSVGTag();
+            if( shapes.empty() )
+                std::cout << "parsing tag " << shapeNode.first << " didn't produce anything.\n";
+            for (auto &shape : shapes) {
+                if( shape.get() != nullptr )
+                    m_drawablePool.push_back( std::move( shape ) );
+            }
+            m_tagStack.pop_back();
+        } catch( pt::ptree_bad_path e ){
+            std::cout << "bad path = " << e.what()<< std::endl;
+        }
+    }
+}
+    
 }//end of svg2sfml namespace

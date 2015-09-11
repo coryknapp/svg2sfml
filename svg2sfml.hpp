@@ -27,7 +27,7 @@ public:
     
 private:
 	std::vector<pt::ptree::value_type*> m_tagStack; 
-
+    return_t m_drawablePool;
 	//apply color as either a shape or a line, based on m_tagStack
 	void applyColorAsShape( sf::Shape * shape );
 	void applyColorAsLine( sf::Shape * shape );
@@ -42,7 +42,9 @@ private:
 		readAsPolyline();
     return_t
         readAsPolygon();
-	
+
+    
+    void recursiveParse( pt::ptree::value_type &shapeNode );
 	return_t shapesFromSVGTag();
 };
 
