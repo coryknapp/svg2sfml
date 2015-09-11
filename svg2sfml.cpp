@@ -27,6 +27,21 @@ return_t readSVG( const std::string &path ){
     Loader l;
     return l.read( path );
 }
+
+template<typename T>
+T Loader::getFromTagStack( const std::string &attr, const T &orV  ){
+    boost::optional<std::string> result;
+    std::string address = "<xmlattr>."+attr;
+    result = m_svgTag->second.get_optional<std::string>( address );
+    for( auto &e : m_tagStack ){
+        auto tempVal = e->second.get_optional<std::string>( address );
+        if( tempVal )
+            result = tempVal;
+    }
+    if( result )
+        return boost::lexical_cast<T>( result.get() );
+    return orV;
+}
     
 sf::Color colorFromSVGColor( const std::string &name ){
 
@@ -42,33 +57,18 @@ sf::Color colorFromSVGColor( const std::string &name ){
 		std::cout << name << std::endl;
 		return colorFromSVGColor( iter->second );
 	}
-	std::cout << "Warning: no color found.  defaults to white." << std::endl;
+    if( name == "none" ){
+        return sf::Color( 0, 0, 0, 0 );
+    }
+	std::cout << "Warning: no color found for string \"" << name << "\". defaults to white." << std::endl;
 	return sf::Color(255,255,255,255);//TODO throw something
 }
 
 
 void Loader::applyColorAsShape( sf::Shape * shape ){
-//color/stroke attributes shared by all shapes
-    boost::optional<std::string> fillColorStr;
-    boost::optional<std::string> strokeColorStr;
-    boost::optional<std::string> thicknessStr;
-    for( auto &e : m_tagStack ){
-        auto tempFill = e->second.get_optional<std::string>( "<xmlattr>.fill" );
-        if( tempFill )
-            fillColorStr = std::move( tempFill );
-        auto tempStroke = e->second.get_optional<std::string>( "<xmlattr>.stroke" );
-        if( tempStroke )
-            strokeColorStr = std::move( tempStroke );
-        auto tempWidth = e->second.get_optional<std::string>( "<xmlattr>.stroke-width" );
-        if( tempWidth )
-            thicknessStr = std::move( tempWidth );
-    }
-    
-    std::cout << "DICK " << fillColorStr.value_or( "SHIT FUCKER" ) << "\n";
-    
-    shape->setFillColor( colorFromSVGColor( fillColorStr.value_or( default_fill_color) ) );
-    shape->setOutlineColor( colorFromSVGColor( strokeColorStr.value_or( default_stroke_color ) ) );
-    shape->setOutlineThickness( boost::lexical_cast<float>( thicknessStr.value_or( "0" ) ) );
+    shape->setFillColor( colorFromSVGColor( getFromTagStack<std::string>( "fill", default_fill_color) ) );
+    shape->setOutlineColor( colorFromSVGColor( getFromTagStack<std::string>( "stroke", default_stroke_color) ) );
+    shape->setOutlineThickness( getFromTagStack<float>( "stroke-width", 0.0f ) );
 }
 
 void Loader::applyColorAsLine( sf::Shape * shape ){
@@ -90,7 +90,8 @@ void Loader::applyTransformable( sf::Shape * shape ){
                 //find what comes before the (, that's the command
                 size_t openParan = command.find( "(" );
                 std::string functionName = command.substr( 0, openParan );
-                std::string argument = command.substr( openParan+1, command.find( ")" ) );
+                std::string argument = command.substr( openParan+1, command.find( ")" )-openParan-1 );
+                std::cout << functionName << " " << argument << std::endl;
                 if( functionName == "translate" ){
                     //this one has two coords
                     size_t commaPos = argument.find( "," );
@@ -125,6 +126,7 @@ std::unique_ptr< sf::Drawable >
 		//	m_tagStack.back()->second.get<float>("rx"),
 		//	m_tagStack.back()->second.get<float>("ry") );
 	applyColorAsShape( newRect );
+    applyTransformable( newRect );
 	return std::unique_ptr< sf::Drawable >( newRect );
 }
 
@@ -132,8 +134,8 @@ std::unique_ptr< sf::Drawable >
 	Loader::readAsCircle(){
         sf::CircleShape * newCirc = new sf::CircleShape;
         newCirc->setPosition(
-                             m_tagStack.back()->second.get<float>("<xmlattr>.cx"),
-                             m_tagStack.back()->second.get<float>("<xmlattr>.cy") );
+                             m_tagStack.back()->second.get<float>("<xmlattr>.cx", 0.0f ),
+                             m_tagStack.back()->second.get<float>("<xmlattr>.cy", 0.0f ) );
         newCirc->setOrigin(
                            m_tagStack.back()->second.get<float>("<xmlattr>.r"),
                            m_tagStack.back()->second.get<float>("<xmlattr>.r"));
@@ -141,6 +143,7 @@ std::unique_ptr< sf::Drawable >
         newCirc->setRadius(
                            m_tagStack.back()->second.get<float>("<xmlattr>.r") );
         applyColorAsShape( newCirc );
+        applyTransformable( newCirc );
         return std::unique_ptr< sf::Drawable >( newCirc );
 }
     
@@ -148,13 +151,14 @@ std::unique_ptr< sf::Drawable >
     Loader::readAsEllipse(){
     EllipseShape * newEllipse = new EllipseShape;
     newEllipse->setPosition(
-                         m_tagStack.back()->second.get<float>("<xmlattr>.cx"),
-                         m_tagStack.back()->second.get<float>("<xmlattr>.cy") );
-    newEllipse->setPosition(
-                       m_tagStack.back()->second.get<float>("<xmlattr>.cx"),
-                       m_tagStack.back()->second.get<float>("<xmlattr>.cy"));
+                         m_tagStack.back()->second.get<float>("<xmlattr>.cx", 0.0f ),
+                         m_tagStack.back()->second.get<float>("<xmlattr>.cy", 0.0f ) );
+        newEllipse->setRadius( sf::Vector2f(
+                       m_tagStack.back()->second.get<float>("<xmlattr>.rx"),
+                       m_tagStack.back()->second.get<float>("<xmlattr>.ry")) );
     
     applyColorAsShape( newEllipse );
+    applyTransformable( newEllipse );
     return std::unique_ptr< sf::Drawable >( newEllipse );
     
 }
@@ -184,6 +188,7 @@ std::unique_ptr< sf::Drawable > Loader::readAsLine(){
 	float width = m_tagStack.back()->second.get<float>("<xmlattr>.stroke-width");
 	auto retRect = rectForLine( x1, y1, x2, y2, width );
     applyColorAsLine( boost::polymorphic_downcast<sf::Shape*>(retRect.get()) );
+    applyTransformable( boost::polymorphic_downcast<sf::Shape*>(retRect.get()) );
 	return retRect;
 }
 
@@ -212,6 +217,7 @@ return_t Loader::readAsPolyline(){
 
         auto lineSegRect = rectForLine( oX, oY, nX, nY, width );
         applyColorAsLine( boost::polymorphic_downcast<sf::Shape*>(lineSegRect.get()) );
+        applyTransformable( boost::polymorphic_downcast<sf::Shape*>(lineSegRect.get()) );
         returnPool.push_back( std::move( lineSegRect ) );
         
         oX = nX;
@@ -244,6 +250,7 @@ return_t Loader::readAsPolygon(){
         shape->setPoint( pCount-1, sf::Vector2f( x, y) );
     }
     applyColorAsShape( shape );
+    applyTransformable( shape );
     
     returnPool.push_back(std::unique_ptr<sf::Drawable>( shape ));
     
@@ -277,6 +284,8 @@ return_t Loader::read( const std::string &path ){
     pt::ptree tree;
     pt::read_xml(path, tree);
 
+    m_svgTag = &(tree.get_child("svg.<xmlattr>").front());
+    
     for( auto &e : tree.get_child( "svg" ) )
         recursiveParse( e );
 

@@ -26,16 +26,24 @@ public:
     return_t read( const std::string &path );
     
 private:
-	std::vector<pt::ptree::value_type*> m_tagStack; 
+	std::vector<pt::ptree::value_type*> m_tagStack;
+    pt::ptree::value_type* m_svgTag;
+
+    template<typename T>
+    T getFromTagStack( const std::string &attr, const T &orV  );
+    
     return_t m_drawablePool;
 	//apply color as either a shape or a line, based on m_tagStack
 	void applyColorAsShape( sf::Shape * shape );
 	void applyColorAsLine( sf::Shape * shape );
+    void applyTransformable( sf::Shape * shape );
 
 	std::unique_ptr< sf::Drawable >
 		readAsRect();
 	std::unique_ptr< sf::Drawable >
 		readAsCircle();
+	std::unique_ptr< sf::Drawable >
+		readAsEllipse();
 	std::unique_ptr< sf::Drawable >
 		readAsLine();
 	return_t
@@ -46,6 +54,7 @@ private:
     
     void recursiveParse( pt::ptree::value_type &shapeNode );
 	return_t shapesFromSVGTag();
+
 };
 
 
